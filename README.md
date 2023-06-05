@@ -34,13 +34,10 @@ NeRF---: Plus Version of NeRF--, optimize camera poses and NeRF in an end-to-end
 
 ### TODO
  * trying to reimplement vanilla NeRF
-    * add configuration control
     * decide ray marching bounds, i.e. near and far
     * add tensorboard support
     * perturb on ray sampling, meaning of this ?
-    * refactor a consistent implementation for both training and evaluation
     * visualize the scene and pose, similar to NeRF++
-    * find a suitable batch size for A100 GPU
     * comparision video
 
 ### STATE
