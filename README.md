@@ -41,4 +41,7 @@ NeRF---: Plus Version of NeRF--, optimize camera poses and NeRF in an end-to-end
     * comparision video
 
 ### STATE
- * June 4. 256 Samples. Using epoch 29. PSNR: 24.966. ![](readme_visuals/3_0.png)
+ * June 4. 256 Samples. Using epoch 29. PSNR: 24.966.
+ <video controls>
+    <source src="./readme_visuals/hidden128.mp4" type="video/mp4">
+</video>
