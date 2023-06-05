@@ -10,8 +10,9 @@ from vanilla_nerf import VanillaNeRF
 from embedding import Embedder
 from rendering import Renderer
 from blender import BlenderDataSet
-from utils.logging import logger
+from utils.log import logger
 from utils.metrics import compute_psnr
+from utils.vis_utils import generate_video_from_images
 from config_parse import config 
 import matplotlib.pyplot as plt
 
@@ -130,7 +131,7 @@ def forward(batch, cfg):
 
 global_step = 0    
 all_psnr = []
-for epoch in range(max_epoch):
+for epoch in range(max_epoch): # max_epoch is 1 for test
     for it, batch in enumerate(dataloader):
         logger.info("epoch: {}, iter: {}/{}".format(epoch, it, len(dataloader)))
         rgb_prediction, rgbs = forward(batch, cfg)  # (B, H*W, 3)
@@ -162,3 +163,5 @@ for epoch in range(max_epoch):
         torch.save(nerf_model.state_dict(), '{}/model_state_{}.pth'.format(ckpt_dir, epoch))    
     else: # evaluation mode
         logger.title("average psnr: {}".format(torch.tensor(all_psnr).mean().item()))
+        generate_video_from_images(eval_dir)
+        

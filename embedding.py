@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from utils.logging import logger
+from utils.log import logger
 
 class Embedder(nn.Module):
     def __init__(self, input_dim, level, description):

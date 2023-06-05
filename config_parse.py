@@ -1,7 +1,7 @@
 import argparse
 import yaml
 import sys
-from utils.logging import logger
+from utils.log import logger
 from easydict import EasyDict as edict
 
 def parse_arguments(args):

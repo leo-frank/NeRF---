@@ -4,7 +4,7 @@ import os
 from torch.utils.data import Dataset
 import numpy as np
 import imageio 
-from utils.logging import logger
+from utils.log import logger
 from utils.ray_utils import get_ray_directions, get_rays
 
 class BlenderDataSet(Dataset):

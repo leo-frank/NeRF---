@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.utils.data
-from utils.logging import logger
+from utils.log import logger
 
 
 class VanillaNeRF(nn.Module):
