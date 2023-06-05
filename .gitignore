@@ -1,0 +1,6 @@
+__pycache__/
+output/**
+nerf_llff_data/
+nerf_synthetic/
+Synthetic_NeRF
+runs/
