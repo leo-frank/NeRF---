@@ -132,7 +132,7 @@ global_step = 0
 all_psnr = []
 for epoch in range(max_epoch):
     for it, batch in enumerate(dataloader):
-        logger.info("epoch: {}, iter: {}/{}".format(0, it, len(dataloader)))
+        logger.info("epoch: {}, iter: {}/{}".format(epoch, it, len(dataloader)))
         rgb_prediction, rgbs = forward(batch, cfg)  # (B, H*W, 3)
         
         if mode == 'train':
