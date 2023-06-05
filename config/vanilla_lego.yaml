@@ -1,0 +1,9 @@
+_parent_: config/base.yaml
+
+mode: train                                     # train/test
+
+data:
+    base_dir: ./nerf_synthetic
+    scene: lego
+
+description: hidden256

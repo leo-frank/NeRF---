@@ -1,154 +1,149 @@
 import time
+import os
 import torch
 from torch.utils.data import DataLoader
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import save_image
+
 from vanilla_nerf import VanillaNeRF
 from embedding import Embedder
 from rendering import Renderer
 from blender import BlenderDataSet
 from utils.logging import logger
 from utils.metrics import compute_psnr
+from config_parse import config 
 import matplotlib.pyplot as plt
 
-mode = 'train'
-mode = 'test'
+### config ###
+cfg = config()
+mode = cfg.mode
+assert mode in ['train', 'test']
+max_epoch = cfg.train.max_epoch if mode == 'train' else 1
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
 ### xyz embedding ###
-xyz_level = 10
-embedder_xyz_model = Embedder(input_dim = 3, level = xyz_level, description = "Position Embedder").to(device)
+embedder_xyz_model = Embedder(input_dim = 3, level = cfg.model.Embedding.xyz_level, description = "Position Embedder").to(device)
 
 ### direction embedding ###
-direction_level = 4
-embedder_direction_model = Embedder(input_dim = 3, level = direction_level, description = "Direction Embedder").to(device)
+embedder_direction_model = Embedder(input_dim = 3, level = cfg.model.Embedding.direction_level, description = "Direction Embedder").to(device)
 
 ### nerf model ###
-nerf_model = VanillaNeRF(embedder_xyz_model.out_dim, embedder_direction_model.out_dim, 128).to(device)
+nerf_model = VanillaNeRF(embedder_xyz_model.out_dim, embedder_direction_model.out_dim, cfg.model.VanillaNeRF.hidden_size).to(device)
 
 ### loss model ###
 loss_model = torch.nn.MSELoss(reduction='mean').to(device)
 
 ### optimizer ###
-initial_lr = 0.001
-optimizer = optim.Adam(nerf_model.parameters(), lr=initial_lr)
+optimizer = optim.Adam(nerf_model.parameters(), lr=cfg.lr.initial)
 
 
 ### dataloading: ray_o, rays_d, near, far ###
-batch_size = 10240 if mode == 'train' else 1
-shuffle = True if mode == 'train' else False
-dataset = BlenderDataSet(mode=mode)
+batch_size = cfg.train.batch_size if mode == 'train' else cfg.test.batch_size
+shuffle = cfg.train.shuffle  if mode == 'train' else cfg.test.shuffle
+chunk_size = cfg.train.chunk_size if mode == 'train' else cfg.test.chunk_size
+dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode=mode)
 h, w = dataset.h, dataset.w
 dataloader = DataLoader(dataset, batch_size, shuffle)
 
+### prepare output dir ###
+log_dir = './output/{}/{}/logs/'.format(cfg.data.scene, cfg.description)
+eval_dir = './output/{}/{}/test/'.format(cfg.data.scene, cfg.description)
+ckpt_dir = './output/{}/{}/ckpt/'.format(cfg.data.scene, cfg.description)
+os.makedirs(log_dir, exist_ok=True)
+os.makedirs(eval_dir, exist_ok=True)
+os.makedirs(ckpt_dir, exist_ok=True)
 
 ### tensorboard ###
-writer = SummaryWriter()
+writer = SummaryWriter(log_dir)
 global_step = 0
 
 logger.title("Current mode: {}".format(mode))
 
+
 if mode == 'train':
+    
+    torch.set_grad_enabled(True)
     
     embedder_xyz_model.train()
     embedder_direction_model.train()
     nerf_model.train()
-
-    for epoch in range(30):
-        for it, batch in enumerate(dataloader):
-            logger.info("epoch: {}, iter: {}/{}".format(epoch, it, len(dataloader)))
-            rays_o, rays_d, rgbs = batch['rays_o'].to(device), batch['rays_d'].to(device), batch['rgbs'].to(device) # (B, 3), (B, 3), (B, 3)
-            near = 0
-            far = 10
-
-            ### samples on o+td ### # TODO: perturb
-            N_samples = 256
-            rays_o = rays_o.unsqueeze(1).expand(batch_size, N_samples, 3) # (B, N_samples, 3)
-            rays_d = rays_d.unsqueeze(1).expand(batch_size, N_samples, 3) # (B, N_samples, 3)
-            z_steps = torch.linspace(0, 1, N_samples, device=rays_o.device) # (N_samples)
-            z_vals = near * (1-z_steps) + far * z_steps # (N_samples)
-            z_vals = z_vals.unsqueeze(0).unsqueeze(2).expand(batch_size, N_samples, 1) # (B, N_samples, 3)
-            xyz_samples = rays_o + rays_d * z_vals # (B, N_samples, 3)
-
-            ### model inference ###
-            xyz_embedded = embedder_xyz_model(xyz_samples)
-            direction_embedded = embedder_direction_model(rays_d)
-            color, sigma = nerf_model(xyz_embedded, direction_embedded)
-            rgb_prediction, depth_prediction = Renderer.volume_rendering(sigma, color, z_vals) # (N_rays, 3), (N_rays, 1)
-
-            rgb_loss = loss_model(rgb_prediction, rgbs)
-            
-            optimizer.zero_grad()
-            rgb_loss.backward()
-            optimizer.step()
-            
-            writer.add_scalar('Loss', rgb_loss.item(), global_step)
-            global_step += 1
-
-        torch.save(nerf_model.state_dict(), 'output/ckpts/model_state_{}.pth'.format(epoch))
+    
 
 elif mode == 'test':
+    
+    torch.set_grad_enabled(False)
     
     embedder_xyz_model.eval()
     embedder_direction_model.eval()
     nerf_model.eval()
     
-    load_epoch = 29
-    state_dict = torch.load('output/ckpts/model_state_{}.pth'.format(load_epoch))
+    state_dict = torch.load(cfg.test.ckpt)
     nerf_model.load_state_dict(state_dict)
     
-    all_psnr = []
+    
 
-    with torch.no_grad():
-        for it, batch in enumerate(dataloader):
-            logger.info("epoch: {}, iter: {}/{}".format(0, it, len(dataloader)))
-            # NOTE: WHEN TO 
-            rays_o, rays_d, rgbs = batch['rays_o'], batch['rays_d'], batch['rgbs'] # (B, H*W, 3), # (B, H*W, 3), # (B, H*W, 3)
+def forward(batch, cfg):
+    rays_o, rays_d, rgbs = batch['rays_o'], batch['rays_d'], batch['rgbs'] # (B, H*W, 3), # (B, H*W, 3), # (B, H*W, 3)
+    shape = rays_o.shape
+    
+    rays_o = rays_o.view(-1, 3)                                                     # (B*H*W, 3)
+    rays_d = rays_d.view(-1, 3)                                                     # (B*H*W, 3)
+                                                                                    
+     # Next, B*H*W is called N_rays
+     
+    near = 0
+    far = 10
 
-            shape = rays_o.shape
-            
-            
-            rays_o = rays_o.view(-1, 3)
-            rays_d = rays_d.view(-1, 3)
-            
-            near = 0
-            far = 10
+    ### samples on o+td ### # TODO: perturb
+    N_samples = cfg.N_samples
+    rays_o = rays_o.unsqueeze(1).expand(-1, N_samples, 3)                           # (N_rays, N_samples, 3)
+    rays_d = rays_d.unsqueeze(1).expand(-1, N_samples, 3)                           # (N_rays, N_samples, 3)
+    z_steps = torch.linspace(0, 1, N_samples, device=rays_o.device)                 # (N_samples)
+    z_vals = near * (1-z_steps) + far * z_steps                                     # (N_samples)
+    z_vals = z_vals.unsqueeze(0).unsqueeze(2).expand(rays_o.shape[0], N_samples, 1) # (N_rays, N_samples, 1)
+    xyz_samples = rays_o + rays_d * z_vals                                          # (N_rays, N_samples, 3)
 
-            ### samples on o+td ### # TODO: perturb
-            N_samples = 256
-            rays_o = rays_o.unsqueeze(1).expand(-1, N_samples, 3) # (B, N_samples, 3)
-            rays_d = rays_d.unsqueeze(1).expand(-1, N_samples, 3) # (B, N_samples, 3)
-            z_steps = torch.linspace(0, 1, N_samples, device=rays_o.device) # (N_samples)
-            z_vals = near * (1-z_steps) + far * z_steps # (N_samples)
-            z_vals = z_vals.unsqueeze(0).unsqueeze(2).expand(rays_o.shape[0], N_samples, 1) # (B, N_samples, 1)
-            xyz_samples = rays_o + rays_d * z_vals # (B, N_samples, 3)
-            logger.info("xyz_samples.shape = {}".format(xyz_samples.shape))
-            logger.info("rays_d.shape = {}".format(rays_d.shape))
-            logger.info("z_vals.shape = {}".format(z_vals.shape))
+    def inference_chunk(xyz_samples, rays_d, z_vals):
+        ### model inference ###
+        xyz_embedded = embedder_xyz_model(xyz_samples)
+        direction_embedded = embedder_direction_model(rays_d)
+        color, sigma = nerf_model(xyz_embedded, direction_embedded)
+        rgb_prediction, depth_prediction = Renderer.volume_rendering(sigma, color, z_vals) # (N_rays, 3), (N_rays, 1)
+        return rgb_prediction, depth_prediction
 
-            def inference_chunk(xyz_samples, rays_d, z_vals):
-                ### model inference ###
-                xyz_embedded = embedder_xyz_model(xyz_samples)
-                direction_embedded = embedder_direction_model(rays_d)
-                color, sigma = nerf_model(xyz_embedded, direction_embedded)
-                rgb_prediction, depth_prediction = Renderer.volume_rendering(sigma, color, z_vals) # (N_rays, 3), (N_rays, 1)
-                return rgb_prediction, depth_prediction
+    results =[]
+    start_time = time.time()
+    
+    ### TODO: This is not great implementation. I want to reuse codes as possible, but chunk_size is not really suited for training.
+    ### Given same batch input, forward_gradient and forward_no_gradient indded use different amount of mem, required for gradient bookkeeping.
+    for i in range(0, xyz_samples.shape[0], chunk_size):
+        rgb, depth = inference_chunk(xyz_samples[i:i+chunk_size].to(device), rays_d[i:i+chunk_size].to(device), z_vals[i:i+chunk_size].to(device))
+        results.append(rgb)
 
-            results =[]
-            chunk_size = 40960
-            start_time = time.time()
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    logger.info("Elapsed time: {} seconds".format(elapsed_time))
+    rgb_prediction = torch.cat(results)
+    rgb_prediction = rgb_prediction.view(shape) # (B, H*W, 3)
+    return rgb_prediction, rgbs.to(rgb_prediction.device)
+
+global_step = 0    
+all_psnr = []
+for epoch in range(max_epoch):
+    for it, batch in enumerate(dataloader):
+        logger.info("epoch: {}, iter: {}/{}".format(0, it, len(dataloader)))
+        rgb_prediction, rgbs = forward(batch, cfg)  # (B, H*W, 3)
+        
+        if mode == 'train':
+            rgb_loss = loss_model(rgb_prediction, rgbs)
             
-            for i in range(0, xyz_samples.shape[0], chunk_size):
-                rgb, depth = inference_chunk(xyz_samples[i:i+chunk_size].to(device), rays_d[i:i+chunk_size].to(device), z_vals[i:i+chunk_size].to(device))
-                results.append(rgb)
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            print("Elapsed time:", elapsed_time, "seconds")
-            rgb_prediction = torch.cat(results)
-            rgb_prediction = rgb_prediction.view(shape) # (B, H*W, 3)
+            optimizer.zero_grad()
+            rgb_loss.backward()
+            optimizer.step()
+            writer.add_scalar('loss/rgb', rgb_loss.item(), global_step)
             
+        else: # evaluation mode
             rgb_prediction = rgb_prediction.unbind(0)
             rgbs = rgbs.unbind(0)
             
@@ -156,8 +151,14 @@ elif mode == 'test':
                 img = img.view(h, w, 3) 
                 img_gt = img_gt.view(h, w, 3).to(device)
                 concatenated_image = torch.cat([img, img_gt], dim=1) # (h, 2w, 3)
-                save_image(concatenated_image.permute(2, 0, 1), "{}_{}.png".format(it, i))
+                save_image(concatenated_image.permute(2, 0, 1), "{}/{}_{}.png".format(eval_dir, it, i))
                 psnr = compute_psnr(img.unsqueeze(0), img_gt.unsqueeze(0))
                 all_psnr.append(psnr)
                 logger.info("saving {}_{}.png, psnr: {}".format(it, i, psnr))
+            
+        global_step += 1
+    
+    if mode == 'train':
+        torch.save(nerf_model.state_dict(), '{}/model_state_{}.pth'.format(ckpt_dir, epoch))    
+    else: # evaluation mode
         logger.title("average psnr: {}".format(torch.tensor(all_psnr).mean().item()))

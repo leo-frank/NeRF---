@@ -1,0 +1,26 @@
+model:
+    Embedding:
+        xyz_level: 10
+        direction_level: 4
+    VanillaNeRF:
+        hidden_size: 256
+
+                                 
+
+N_samples: 256
+
+lr:
+    initial: 0.001
+
+
+train:
+    max_epoch: 30
+    batch_size: 10240     # let batch_size equal to chunk_size
+    chunk_size: 10240     # 10240 is the best supported size for single A100 GPU
+    shuffle: True  
+
+test:
+    batch_size: 1         # This indeed not matters for eval, refer to chunk_size
+    chunk_size: 10240
+    shuffle: False  
+    ckpt: output/lego/hidden128/ckpts/model_state_29.pth

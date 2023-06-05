@@ -13,7 +13,7 @@ class BlenderDataSet(Dataset):
         self.root_dir = os.path.join(base_dir, scene)
         self.mode = mode
         assert self.mode in ['train', 'test']
-        logger.title("Loading dataset from {}".format(self.root_dir))
+        logger.title("Loading dataset from {}, mode: {}".format(self.root_dir, self.mode))
         self.images = []
         self.poses = []
         self.read_transforms_json(os.path.join(self.root_dir, 'transforms_{}.json'.format(mode)))
@@ -86,8 +86,6 @@ from torch.utils.data import DataLoader
 if __name__ == '__main__':
     dataset = BlenderDataSet()
     dataloader = DataLoader(dataset)
-    for i in dataloader[:5]:
-        print(i)
     
     # To save image:
     # i1 = self.images[0] * 255
