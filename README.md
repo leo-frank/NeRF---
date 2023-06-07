@@ -39,6 +39,7 @@ NeRF---: Plus Version of NeRF--, optimize camera poses and NeRF in an end-to-end
     * perturb on ray sampling, meaning of this ?
     * visualize the scene and pose, similar to NeRF++, instant-ngp may also provide a good check
     * learning rate decay
+ * use eninops
  * HashNeRF
 
 ### STATE
