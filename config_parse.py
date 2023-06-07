@@ -58,7 +58,7 @@ def parse_yaml_file(file_path):
 
 def config():
     args = parse_arguments(sys.argv[1:])
-    data = parse_yaml_file('config/vanilla_lego.yaml')
+    data = parse_yaml_file(args.config)
     data = override_edict(data, args)
     return data
 
