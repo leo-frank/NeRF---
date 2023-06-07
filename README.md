@@ -44,7 +44,7 @@ NeRF---: Plus Version of NeRF--, optimize camera poses and NeRF in an end-to-end
 ### STATE
  * June 4. 256 Samples. Using epoch 29. PSNR: 24.966. ![](readme_visuals/hidden128.gif)
  * June 6. 256 Samples. Using epoch 29. PSNR: 27.706. ![](readme_visuals/hidden256.gif)
-    * **may be I have not decided a reasonable bound, so PSNR is relative lower than orginal paper(31.42)**
+    * **may be I have not decided a reasonable bound, so PSNR is relative lower than orginal paper(31.42) (near=2, far=6)**
 
 ### NOTES on vanilla NeRF
  * Paper description

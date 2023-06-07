@@ -6,4 +6,4 @@ data:
     base_dir: ./nerf_synthetic
     scene: lego
 
-description: hidden256
+description: hidden256_near2_far6

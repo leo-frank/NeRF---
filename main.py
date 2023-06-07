@@ -93,8 +93,8 @@ def forward(batch, cfg):
                                                                                     
      # Next, B*H*W is called N_rays
      
-    near = 0
-    far = 10
+    near = 2
+    far = 6
 
     ### samples on o+td ### # TODO: perturb
     N_samples = cfg.N_samples
