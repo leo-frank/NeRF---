@@ -114,7 +114,6 @@ def forward(batch, cfg):
         return rgb_prediction, depth_prediction
 
     results =[]
-    start_time = time.time()
     
     ### TODO: This is not great implementation. I want to reuse codes as possible, but chunk_size is not really suited for training.
     ### Given same batch input, forward_gradient and forward_no_gradient indded use different amount of mem, required for gradient bookkeeping.
@@ -122,17 +121,19 @@ def forward(batch, cfg):
         rgb, depth = inference_chunk(xyz_samples[i:i+chunk_size].to(device), rays_d[i:i+chunk_size].to(device), z_vals[i:i+chunk_size].to(device))
         results.append(rgb)
 
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    logger.info("Elapsed time: {} seconds".format(elapsed_time))
     rgb_prediction = torch.cat(results)
     rgb_prediction = rgb_prediction.view(shape) # (B, H*W, 3)
+    
+
     return rgb_prediction, rgbs.to(rgb_prediction.device)
 
 global_step = 0    
 all_psnr = []
 for epoch in range(max_epoch): # max_epoch is 1 for test
     for it, batch in enumerate(dataloader):
+        
+        start_time = time.time()
+        
         logger.info("epoch: {}, iter: {}/{}".format(epoch, it, len(dataloader)))
         rgb_prediction, rgbs = forward(batch, cfg)  # (B, H*W, 3)
         
@@ -158,7 +159,11 @@ for epoch in range(max_epoch): # max_epoch is 1 for test
                 logger.info("saving {}_{}.png, psnr: {}".format(it, i, psnr))
             
         global_step += 1
-    
+        
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        logger.info("Elapsed time: {} seconds".format(elapsed_time))
+        
     if mode == 'train':
         torch.save(nerf_model.state_dict(), '{}/model_state_{}.pth'.format(ckpt_dir, epoch))    
     else: # evaluation mode
