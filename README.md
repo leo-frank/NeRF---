@@ -41,6 +41,7 @@ NeRF---: Plus Version of NeRF--, optimize camera poses and NeRF in an end-to-end
     * learning rate decay
  * use eninops
  * HashNeRF
+    * xyz bounding_box and such things, device
 
 ### STATE
  * June 4. 256 Samples. Using epoch 29. PSNR: 24.966. ![](readme_visuals/hidden128.gif)
