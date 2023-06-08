@@ -6,7 +6,7 @@ from utils.log import logger
 
 
 class VanillaNeRF(nn.Module):
-    def __init__(self, pos_in_dims, dir_in_dims, D):
+    def __init__(self, pos_in_dims, dir_in_dims, D, small):
         """
         :param pos_in_dims: scalar, number of channels of encoded positions
         :param dir_in_dims: scalar, number of channels of encoded directions
@@ -14,7 +14,7 @@ class VanillaNeRF(nn.Module):
         """
         super(VanillaNeRF, self).__init__()
 
-        logger.title("VanillaNeRF")
+        logger.title("VanillaNeRF, small:{}".format(small))
         logger.info("position in_dims: {}, level: {}".format(pos_in_dims, (pos_in_dims-3)//6))
         logger.info("direction in_dims: {}, level: {}".format(dir_in_dims, (dir_in_dims-3)//6))
         logger.info("hidden dimension: {}".format(D))
@@ -22,19 +22,32 @@ class VanillaNeRF(nn.Module):
         self.pos_in_dims = pos_in_dims
         self.dir_in_dims = dir_in_dims
 
-        self.layers0 = nn.Sequential(
-            nn.Linear(pos_in_dims, D), nn.ReLU(),
-            nn.Linear(D, D), nn.ReLU(),
-            nn.Linear(D, D), nn.ReLU(),
-            nn.Linear(D, D), nn.ReLU(),
-        )
+        if not small:
+            self.layers0 = nn.Sequential(
+                    nn.Linear(pos_in_dims, D), nn.ReLU(),
+                    nn.Linear(D, D), nn.ReLU(),
+                    nn.Linear(D, D), nn.ReLU(),
+                    nn.Linear(D, D), nn.ReLU(),
+            )
 
-        self.layers1 = nn.Sequential(
-            nn.Linear(D + pos_in_dims, D), nn.ReLU(),  # shortcut
-            nn.Linear(D, D), nn.ReLU(),
-            nn.Linear(D, D), nn.ReLU(),
-            nn.Linear(D, D), nn.ReLU(),
-        )
+            self.layers1 = nn.Sequential(
+                    nn.Linear(D + pos_in_dims, D), nn.ReLU(),  # shortcut
+                    nn.Linear(D, D), nn.ReLU(),
+                    nn.Linear(D, D), nn.ReLU(),
+                    nn.Linear(D, D), nn.ReLU(),
+            )
+        else:
+            self.layers0 = nn.Sequential(
+                    nn.Linear(pos_in_dims, D), nn.ReLU(),
+                    nn.Linear(D, D), nn.ReLU(),
+                    nn.Linear(D, D), nn.ReLU(),
+            )
+
+            self.layers1 = nn.Sequential(
+                    nn.Linear(D + pos_in_dims, D), nn.ReLU(),  # shortcut
+                    nn.Linear(D, D), nn.ReLU(),
+            )
+            
 
         self.fc_density = nn.Linear(D, 1)
         self.fc_feature = nn.Linear(D, D)

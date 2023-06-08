@@ -8,6 +8,7 @@ from torchvision.utils import save_image
 
 from vanilla_nerf import VanillaNeRF
 from embedding import Embedder
+from hash_embedding import HashEmbedder, SHEncoder
 from rendering import Renderer
 from blender import BlenderDataSet
 from utils.log import logger
@@ -23,21 +24,6 @@ assert mode in ['train', 'test']
 max_epoch = cfg.train.max_epoch if mode == 'train' else 1
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-### xyz embedding ###
-embedder_xyz_model = Embedder(input_dim = 3, level = cfg.model.Embedding.xyz_level, description = "Position Embedder").to(device)
-
-### direction embedding ###
-embedder_direction_model = Embedder(input_dim = 3, level = cfg.model.Embedding.direction_level, description = "Direction Embedder").to(device)
-
-### nerf model ###
-nerf_model = VanillaNeRF(embedder_xyz_model.out_dim, embedder_direction_model.out_dim, cfg.model.VanillaNeRF.hidden_size).to(device)
-
-### loss model ###
-loss_model = torch.nn.MSELoss(reduction='mean').to(device)
-
-### optimizer ###
-optimizer = optim.Adam(nerf_model.parameters(), lr=cfg.lr.initial)
-
 
 ### dataloading: ray_o, rays_d, near, far ###
 batch_size = cfg.train.batch_size if mode == 'train' else cfg.test.batch_size
@@ -46,6 +32,31 @@ chunk_size = cfg.train.chunk_size if mode == 'train' else cfg.test.chunk_size
 dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode=mode)
 h, w = dataset.h, dataset.w
 dataloader = DataLoader(dataset, batch_size, shuffle)
+
+
+### xyz embedding & direction embedding ###
+if cfg.model.type == 'vanilla':
+    embedder_xyz_model = Embedder(input_dim = 3, level = cfg.model.Embedding.xyz_level, description = "Position Embedder").to(device)
+    embedder_direction_model = Embedder(input_dim = 3, level = cfg.model.Embedding.direction_level, description = "Direction Embedder").to(device)
+elif cfg.model.type == 'hash':
+    embedder_xyz_model = HashEmbedder(bounding_box = dataset.bounding_box, description = "Multi-level Hash Position Embedder").to(device)
+    embedder_direction_model = SHEncoder(description = "SH Direction Embedder").to(device)
+
+### nerf model ###
+hidden_dim = cfg.model.VanillaNeRF.hidden_size if cfg.model.type == 'vanilla' else cfg.model.HashNeRF.hidden_size
+small = False if cfg.model.type == 'vanilla' else True
+nerf_model = VanillaNeRF(pos_in_dims=embedder_xyz_model.out_dim, dir_in_dims=embedder_direction_model.out_dim, D=hidden_dim, small=small).to(device)
+
+### loss model ###
+loss_model = torch.nn.MSELoss(reduction='mean').to(device)
+
+### optimizer ###
+if cfg.model.type == 'vanilla':
+    optimizer = optim.Adam(nerf_model.parameters(), lr=cfg.lr.initial)
+elif cfg.model.type == 'hash':
+    optimizer = optim.Adam(nerf_model.parameters(), lr=1e-2, eps=1e-15)
+    optimizer_embedding_xyz = optim.Adam(embedder_xyz_model.parameters(), lr=1e-2, eps=1e-15)
+
 
 ### prepare output dir ###
 log_dir = './output/{}/{}/logs/'.format(cfg.data.scene, cfg.description)
@@ -107,8 +118,8 @@ def forward(batch, cfg):
 
     def inference_chunk(xyz_samples, rays_d, z_vals):
         ### model inference ###
-        xyz_embedded = embedder_xyz_model(xyz_samples)
-        direction_embedded = embedder_direction_model(rays_d)
+        xyz_embedded = embedder_xyz_model(xyz_samples)                              # (N_rays, N_samples, xxx)
+        direction_embedded = embedder_direction_model(rays_d)                       # (N_rays, N_samples, yyy)
         color, sigma = nerf_model(xyz_embedded, direction_embedded)
         rgb_prediction, depth_prediction = Renderer.volume_rendering(sigma, color, z_vals) # (N_rays, 3), (N_rays, 1)
         return rgb_prediction, depth_prediction
@@ -139,11 +150,20 @@ for epoch in range(max_epoch): # max_epoch is 1 for test
         
         if mode == 'train':
             rgb_loss = loss_model(rgb_prediction, rgbs)
-            
+            psnr = compute_psnr(rgb_prediction, rgbs)
+             
             optimizer.zero_grad()
+            if cfg.model.type == 'hash':
+                optimizer_embedding_xyz.zero_grad()
+
             rgb_loss.backward()
+
             optimizer.step()
+            if cfg.model.type == 'hash':
+                optimizer_embedding_xyz.step()
+
             writer.add_scalar('loss/rgb', rgb_loss.item(), global_step)
+            writer.add_scalar('loss/psnr', psnr.item(), global_step)
             
         else: # evaluation mode
             rgb_prediction = rgb_prediction.unbind(0)

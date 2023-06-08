@@ -1,9 +1,12 @@
 model:
+    type: vanilla
     Embedding:
         xyz_level: 10
         direction_level: 4
     VanillaNeRF:
         hidden_size: 256
+    HashNeRF:
+        hidden_size: 64
 
                                  
 

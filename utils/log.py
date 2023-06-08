@@ -22,6 +22,9 @@ class Log:
     def info(self,message):
         print(magenta(message,bold=True))
     
+    def warn(self,message):
+        print(blue(message,bold=True))
+
     def error(self,message):
         print(red(message,bold=True))
     
