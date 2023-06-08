@@ -5,8 +5,10 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import save_image
+from tqdm import tqdm
 
 from vanilla_nerf import VanillaNeRF
+from hash_nerf import HashNeRF
 from embedding import Embedder
 from hash_embedding import HashEmbedder, SHEncoder
 from rendering import Renderer
@@ -29,7 +31,9 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 batch_size = cfg.train.batch_size if mode == 'train' else cfg.test.batch_size
 shuffle = cfg.train.shuffle  if mode == 'train' else cfg.test.shuffle
 chunk_size = cfg.train.chunk_size if mode == 'train' else cfg.test.chunk_size
-dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode=mode)
+inference_train =  cfg.test.inference_train  if mode == 'test' else False
+train_dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode='train', inference_train=False) # TODO: clecan codes
+dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode=mode, inference_train=inference_train)
 h, w = dataset.h, dataset.w
 dataloader = DataLoader(dataset, batch_size, shuffle)
 
@@ -39,14 +43,16 @@ if cfg.model.type == 'vanilla':
     embedder_xyz_model = Embedder(input_dim = 3, level = cfg.model.Embedding.xyz_level, description = "Position Embedder").to(device)
     embedder_direction_model = Embedder(input_dim = 3, level = cfg.model.Embedding.direction_level, description = "Direction Embedder").to(device)
 elif cfg.model.type == 'hash':
-    embedder_xyz_model = HashEmbedder(bounding_box = dataset.bounding_box, description = "Multi-level Hash Position Embedder").to(device)
+    embedder_xyz_model = HashEmbedder(bounding_box = train_dataset.bounding_box, description = "Multi-level Hash Position Embedder").to(device)
     embedder_direction_model = SHEncoder(description = "SH Direction Embedder").to(device)
 
 ### nerf model ###
 hidden_dim = cfg.model.VanillaNeRF.hidden_size if cfg.model.type == 'vanilla' else cfg.model.HashNeRF.hidden_size
 small = False if cfg.model.type == 'vanilla' else True
-nerf_model = VanillaNeRF(pos_in_dims=embedder_xyz_model.out_dim, dir_in_dims=embedder_direction_model.out_dim, D=hidden_dim, small=small).to(device)
-
+if cfg.model.type == 'vanilla':
+    nerf_model = VanillaNeRF(pos_in_dims=embedder_xyz_model.out_dim, dir_in_dims=embedder_direction_model.out_dim, D=hidden_dim, small=small).to(device)
+elif cfg.model.type == 'hash':
+    nerf_model = HashNeRF(input_ch=embedder_xyz_model.out_dim, input_ch_views=embedder_direction_model.out_dim).to(device)
 ### loss model ###
 loss_model = torch.nn.MSELoss(reduction='mean').to(device)
 
@@ -57,10 +63,9 @@ elif cfg.model.type == 'hash':
     optimizer = optim.Adam(nerf_model.parameters(), lr=1e-2, eps=1e-15)
     optimizer_embedding_xyz = optim.Adam(embedder_xyz_model.parameters(), lr=1e-2, eps=1e-15)
 
-
 ### prepare output dir ###
 log_dir = './output/{}/{}/logs/'.format(cfg.data.scene, cfg.description)
-eval_dir = './output/{}/{}/test/'.format(cfg.data.scene, cfg.description)
+eval_dir = './output/{}/{}/test/'.format(cfg.data.scene, cfg.description) if not inference_train else './output/{}/{}/test_trained/'.format(cfg.data.scene, cfg.description)
 ckpt_dir = './output/{}/{}/ckpt/'.format(cfg.data.scene, cfg.description)
 os.makedirs(log_dir, exist_ok=True)
 os.makedirs(eval_dir, exist_ok=True)
@@ -81,6 +86,8 @@ if mode == 'train':
     embedder_direction_model.train()
     nerf_model.train()
     
+    progress_bar = tqdm(total=max_epoch*len(dataloader), desc='Training', unit='batch')
+    
 
 elif mode == 'test':
     
@@ -90,8 +97,16 @@ elif mode == 'test':
     embedder_direction_model.eval()
     nerf_model.eval()
     
-    state_dict = torch.load(cfg.test.ckpt)
-    nerf_model.load_state_dict(state_dict)
+    # state_dict = torch.load(cfg.test.ckpt)
+    # nerf_model.load_state_dict(state_dict)
+
+    checkpoint = torch.load(cfg.test.ckpt)
+    if cfg.old:
+        nerf_model.load_state_dict(checkpoint)
+    else:
+        nerf_model.load_state_dict(checkpoint['nerf_model_state_dict'])
+        embedder_xyz_model.load_state_dict(checkpoint['embedder_xyz_model_state_dict'])
+    progress_bar = tqdm(total=max_epoch*len(dataloader), desc='Inference', unit='batch')
     
     
 
@@ -143,9 +158,6 @@ all_psnr = []
 for epoch in range(max_epoch): # max_epoch is 1 for test
     for it, batch in enumerate(dataloader):
         
-        start_time = time.time()
-        
-        logger.info("epoch: {}, iter: {}/{}".format(epoch, it, len(dataloader)))
         rgb_prediction, rgbs = forward(batch, cfg)  # (B, H*W, 3)
         
         if mode == 'train':
@@ -164,28 +176,51 @@ for epoch in range(max_epoch): # max_epoch is 1 for test
 
             writer.add_scalar('loss/rgb', rgb_loss.item(), global_step)
             writer.add_scalar('loss/psnr', psnr.item(), global_step)
-            
+           
         else: # evaluation mode
             rgb_prediction = rgb_prediction.unbind(0)
             rgbs = rgbs.unbind(0)
             
-            for i, (img, img_gt) in enumerate(zip(rgb_prediction, rgbs)):
+            for i, (img, img_gt) in enumerate(zip(rgb_prediction, rgbs)): # in practice, i always equals to 0
                 img = img.view(h, w, 3) 
                 img_gt = img_gt.view(h, w, 3).to(device)
                 concatenated_image = torch.cat([img, img_gt], dim=1) # (h, 2w, 3)
                 save_image(concatenated_image.permute(2, 0, 1), "{}/{}_{}.png".format(eval_dir, it, i))
                 psnr = compute_psnr(img.unsqueeze(0), img_gt.unsqueeze(0))
                 all_psnr.append(psnr)
+                if inference_train == False:
+                    writer.add_scalar('inference/psnr', psnr.item(), it)
+                else:
+                    writer.add_scalar('inference_train/psnr', psnr.item(), it)
                 logger.info("saving {}_{}.png, psnr: {}".format(it, i, psnr))
             
         global_step += 1
+        progress_bar.update(1)
+
+        if mode == 'train':
+            progress_bar.set_postfix({'Epoch': epoch, 'Loss': rgb_loss.item(), 'PSNR': psnr.item()})
+        else:
+            progress_bar.set_postfix({'Epoch': epoch, 'PSNR': psnr.item()})
         
-        end_time = time.time()
-        elapsed_time = end_time - start_time
-        logger.info("Elapsed time: {} seconds".format(elapsed_time))
+        if global_step % 1000 == 0:
+            if cfg.model.type == 'hash':
+                checkpoint = {
+                    'nerf_model_state_dict': nerf_model.state_dict(),
+                    'embedder_xyz_model_state_dict': embedder_xyz_model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                }
+            else:
+                checkpoint = {
+                    'nerf_model_state_dict': nerf_model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                }
+                
+            torch.save(checkpoint, '{}/model{}_{}.pth'.format(ckpt_dir, epoch, global_step)) 
+        
+        
         
     if mode == 'train':
-        torch.save(nerf_model.state_dict(), '{}/model_state_{}.pth'.format(ckpt_dir, epoch))    
+        pass
     else: # evaluation mode
         logger.title("average psnr: {}".format(torch.tensor(all_psnr).mean().item()))
         generate_video_from_images(eval_dir)

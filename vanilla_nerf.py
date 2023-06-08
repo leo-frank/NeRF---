@@ -39,12 +39,11 @@ class VanillaNeRF(nn.Module):
         else:
             self.layers0 = nn.Sequential(
                     nn.Linear(pos_in_dims, D), nn.ReLU(),
-                    nn.Linear(D, D), nn.ReLU(),
-                    nn.Linear(D, D), nn.ReLU(),
+                    nn.Linear(D, 16), nn.ReLU(),
             )
 
             self.layers1 = nn.Sequential(
-                    nn.Linear(D + pos_in_dims, D), nn.ReLU(),  # shortcut
+                    nn.Linear(16-1 + pos_in_dims, D), nn.ReLU(),  # shortcut
                     nn.Linear(D, D), nn.ReLU(),
             )
             

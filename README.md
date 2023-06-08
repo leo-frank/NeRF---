@@ -35,19 +35,19 @@ NeRF---: Plus Version of NeRF--, optimize camera poses and NeRF in an end-to-end
 ### TODO
  * trying to reimplement vanilla NeRF
     * decide ray marching bounds, i.e. near and far
-    * add tensorboard support
     * perturb on ray sampling, meaning of this ?
     * visualize the scene and pose, similar to NeRF++, instant-ngp may also provide a good check
     * learning rate decay
+    * add LLFF support
  * use eninops
  * HashNeRF
     * xyz bounding_box and such things, device
 
 ### STATE
- * June 4. 256 Samples. Using epoch 29. PSNR: 24.966. ![](readme_visuals/hidden128.gif)
- * June 6. 256 Samples. Using epoch 29. PSNR: 27.706. ![](readme_visuals/hidden256.gif)
+ * June 4. 256 Samples. Using epoch 29. PSNR: 24.966. hidden dim: 128 ![](readme_visuals/hidden128.gif)
+ * June 6. 256 Samples. Using epoch 29. PSNR: 27.706. hidden dim: 256 ![](readme_visuals/hidden256.gif)
     * **may be I have not decided a reasonable bound, so PSNR is relative lower than orginal paper(31.42) (near=2, far=6)**
- * June 8. 256 Samples. Using epoch 9. PSNR: 27.809. ![](readme_visuals/hidden256_near2_far6.gif)
+ * June 8. 256 Samples. Using epoch 9. PSNR: 27.809. near = 2, far = 6 ![](readme_visuals/hidden256_near2_far6.gif)
     * **Fluctuation is very high, peak is close to 31, and some outliers are 21**
 
 ### NOTES on vanilla NeRF

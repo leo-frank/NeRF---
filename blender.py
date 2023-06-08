@@ -2,13 +2,14 @@ import torch
 import json
 import os
 from torch.utils.data import Dataset
+from tqdm import tqdm
 import numpy as np
 import imageio 
 from utils.log import logger
 from utils.ray_utils import get_ray_directions, get_rays
 
 class BlenderDataSet(Dataset):
-    def __init__(self, base_dir='./nerf_synthetic', scene='lego', mode='train'):
+    def __init__(self, base_dir='./nerf_synthetic', scene='lego', mode='train', inference_train=False):
         super(BlenderDataSet, self).__init__()
         self.root_dir = os.path.join(base_dir, scene)
         self.mode = mode
@@ -16,6 +17,9 @@ class BlenderDataSet(Dataset):
         logger.title("Loading dataset from {}, mode: {}".format(self.root_dir, self.mode))
         self.images = []
         self.poses = []
+        if inference_train == True:
+            mode = 'train'
+            logger.info("inference train images")
         self.read_transforms_json(os.path.join(self.root_dir, 'transforms_{}.json'.format(mode)))
         logger.info("rays shape: {}".format(self.rays.shape))
         logger.info("directions shape: {}".format(self.directions.shape))
@@ -26,7 +30,7 @@ class BlenderDataSet(Dataset):
     def read_transforms_json(self, path):
         with open(path, 'r') as fp:
             meta = json.load(fp)
-        for frame in meta['frames']:
+        for frame in tqdm(meta['frames'], desc='Loading image frames', leave=True):
             img_path = os.path.join(self.root_dir, frame['file_path']) + '.png'
             self.images.append(np.array((imageio.v2.imread(img_path)) / 255.0).astype(np.float32))
             self.poses.append(np.array(frame['transform_matrix']).astype(np.float32))
