@@ -29,7 +29,7 @@ def compute_psnr(image_pred, image_gt, valid_mask=None, reduction='mean'):
     """
     Computes the Peak Signal-to-Noise Ratio (PSNR) between image_pred and image_gt.
 
-    Args: All input images must are normalized !!!
+    Args:
         image_pred (torch.Tensor): Predicted image tensor of shape (B, C, H, W).
         image_gt (torch.Tensor): Ground truth image tensor of shape (B, C, H, W).
         valid_mask (torch.Tensor, optional): Validity mask tensor of shape (B, H, W).
@@ -40,4 +40,6 @@ def compute_psnr(image_pred, image_gt, valid_mask=None, reduction='mean'):
                      or tensor of shape (B, H, W) if reduction is 'none'.
 
     """
-    return -10 * torch.log10(mse(image_pred, image_gt, valid_mask, reduction))
+    mse_ = mse(image_pred, image_gt, valid_mask, reduction)
+    max_value = max((image_pred).max(), image_gt.max())
+    return 20 * torch.log10(max_value) - 10 * torch.log10(mse_)
