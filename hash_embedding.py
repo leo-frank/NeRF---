@@ -13,7 +13,7 @@ class HashEmbedder(nn.Module):
                  n_levels=16, 
                  n_features_per_level=2,
                  log2_hashmap_size=19, 
-                 base_resolution=16*4,  # NOTE: 4 is a scale factor for such bounding box size
+                 base_resolution=16,
                  finest_resolution=512*4,
                  description="Multi-level Hash Position Embedder"
         ):

@@ -1,12 +1,19 @@
 _parent_: config/base.yaml
 
-mode: train                                     # train/test
+mode:  train                                     # train/test
 
 data:
     base_dir: ./nerf_synthetic
     scene: lego
+    type: white_bkgd
 
 model:
     type: hash
 
-description: hashnerf
+test:
+    inference_train: False
+    ckpt: output/lego/hashnerf_fuck_resolution_newnerf/ckpt/model2_13000.pth
+
+description: hashnerf_fuck_resolution_newnerf_accmap
+
+old: False

@@ -33,6 +33,7 @@ shuffle = cfg.train.shuffle  if mode == 'train' else cfg.test.shuffle
 chunk_size = cfg.train.chunk_size if mode == 'train' else cfg.test.chunk_size
 inference_train =  cfg.test.inference_train  if mode == 'test' else False
 train_dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode='train', inference_train=False) # TODO: clecan codes
+test_dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode='test', inference_train=inference_train)
 dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode=mode, inference_train=inference_train)
 h, w = dataset.h, dataset.w
 dataloader = DataLoader(dataset, batch_size, shuffle)
@@ -136,7 +137,7 @@ def forward(batch, cfg):
         xyz_embedded = embedder_xyz_model(xyz_samples)                              # (N_rays, N_samples, xxx)
         direction_embedded = embedder_direction_model(rays_d)                       # (N_rays, N_samples, yyy)
         color, sigma = nerf_model(xyz_embedded, direction_embedded)
-        rgb_prediction, depth_prediction = Renderer.volume_rendering(sigma, color, z_vals) # (N_rays, 3), (N_rays, 1)
+        rgb_prediction, depth_prediction = Renderer.volume_rendering(sigma, color, z_vals, cfg.data.type) # (N_rays, 3), (N_rays, 1)
         return rgb_prediction, depth_prediction
 
     results =[]
@@ -153,6 +154,9 @@ def forward(batch, cfg):
 
     return rgb_prediction, rgbs.to(rgb_prediction.device)
 
+def forward_with_no_gradients(batch, cfg):
+    with torch.no_grad():
+        return forward(batch, cfg)
 global_step = 0    
 all_psnr = []
 for epoch in range(max_epoch): # max_epoch is 1 for test
@@ -217,7 +221,23 @@ for epoch in range(max_epoch): # max_epoch is 1 for test
                 
             torch.save(checkpoint, '{}/model{}_{}.pth'.format(ckpt_dir, epoch, global_step)) 
         
-        
+        if global_step % 500 == 1:
+            x1, x2, x3 = test_dataset[0]['rays_o'].unsqueeze(0), test_dataset[0]['rays_d'].unsqueeze(0), test_dataset[0]['rgbs'].unsqueeze(0)
+            test_batch = {
+                'rays_o': x1, # (B, 3)
+                'rays_d': x2, # (B, 3)
+                'rgbs': x3, # (B, 3)
+            }
+            rgb_prediction, rgbs = forward_with_no_gradients(test_batch, cfg)
+            for i, (img, img_gt) in enumerate(zip(rgb_prediction, rgbs)):
+                img = img.view(h, w, 3) 
+                img_gt = img_gt.view(h, w, 3).to(device)
+                concatenated_image = torch.cat([img, img_gt], dim=1) # (h, 2w, 3)    
+                save_image(concatenated_image.permute(2, 0, 1), "{}/test_{}_{}.png".format(eval_dir, global_step, i))  
+                psnr = compute_psnr(img.unsqueeze(0), img_gt.unsqueeze(0))
+                all_psnr.append(psnr)
+                logger.info("saving {}/test_{}_{}.png, psnr: {}".format(eval_dir, global_step, it, psnr))
+                writer.add_scalar('train_val/psnr', psnr.item(), global_step)  
         
     if mode == 'train':
         pass

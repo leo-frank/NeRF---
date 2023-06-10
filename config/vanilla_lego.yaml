@@ -5,5 +5,12 @@ mode: train                                     # train/test
 data:
     base_dir: ./nerf_synthetic
     scene: lego
+    type: white_bkgd
+
+test:
+    inference_train: False
+    ckpt: output/lego/hidden256_near2_far6/ckpt/model_state_9.pth
 
 description: hidden256_near2_far6
+
+old: True

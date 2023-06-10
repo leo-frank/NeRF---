@@ -26,4 +26,3 @@ test:
     batch_size: 1         # This indeed not matters for eval, refer to chunk_size
     chunk_size: 10240
     shuffle: False  
-    ckpt: output/lego/hidden128/ckpts/model_state_29.pth
