@@ -1,5 +1,10 @@
 import imageio
 import os
+import re
+import numpy as np
+import torch
+from utils.metrics import compute_psnr
+from PIL import Image, ImageDraw, ImageFont
 
 def generate_video_from_images(image_directory, output_file='output.mp4', fps=50):
     # List all image files in the directory
@@ -17,8 +22,78 @@ def generate_video_from_images(image_directory, output_file='output.mp4', fps=50
     imageio.mimwrite(os.path.join(image_directory, output_file), frames, fps=fps)
 
 
-if __name__ == '__main__':
-    image_directory = "output/lego/hidden128/test"
-    output_file = "output.mp4"
+def generate_comparision_video(d1, d2):
+    
+    i1 = [os.path.join(d1, f) for f in os.listdir(d1) if f.endswith(".png") and f.startswith("test_")]
+    i1.sort(key=lambda x: os.path.getctime(x))
+    
+    i2 = [os.path.join(d2, f) for f in os.listdir(d2) if f.endswith(".png") and f.startswith("test_")]
+    i2.sort(key=lambda x: os.path.getctime(x))
+    
+    frames = []
 
-    generate_video_from_images(image_directory)
+    length = min(len(i1), len(i2), 40)
+    
+    def psnr(img1):
+        h, w2, c = img1.shape
+        w = w2 // 2
+        t1 = img1[:, :w, :].float()
+        t2 = img1[:, w:w2, :].float()
+        psnr1 = compute_psnr(t1, t2)
+        return psnr1.item()
+    
+    for i in range(length):
+        img1 = torch.from_numpy(np.array(imageio.imread(i1[i]))) # (h, 2w, c)
+        img2 = torch.from_numpy(np.array(imageio.imread(i2[i]))) # (h, 2w, c)
+        
+        ### concat to comparable images
+        h, w2, c = img1.shape
+        w = w2 // 2
+        img = torch.cat([img1[:, :w, :], img2[:, :w, :], img1[:, w:w2, :]], dim=1).numpy() # (h, 3w, c)
+        
+        ### find last iteration as text
+        last_slash_index = i1[i].rfind('/')
+        substring = i1[i][last_slash_index + 1:]
+        match = re.search(r'\d+', substring)
+        if match:
+            text = "Iteration: {}".format(match.group())
+            
+        ### compute psnr as other two text
+        psnr1 = psnr(img1)
+        psnr2 = psnr(img2)
+        text_psnr1 = "{:.3f}".format(psnr1)
+        text_psnr2 = "{:.3f}".format(psnr2)
+
+        ### add all text on image
+        pil_img = Image.fromarray(img)
+        draw = ImageDraw.Draw(pil_img)
+        font = ImageFont.truetype('/usr/share/fonts/truetype/ubuntu/UbuntuMono-RI.ttf', size = 75)
+        font2 = ImageFont.truetype('/usr/share/fonts/truetype/ubuntu/UbuntuMono-RI.ttf', size = 50)
+        
+        ### position of texts
+        postion_iteration = (img1.shape[1]/2-200, img1.shape[0]-100)
+        position_psnr1 = (0, 0)
+        position_psnr2 = (img1.shape[1]/2, 0)
+        
+        ### let psnr winner's color be red
+        color_psnr1 = (255, 0, 0) if psnr1 > psnr2 else (0, 0, 0)
+        color_psnr2 = (0, 0, 0) if psnr1 > psnr2 else (255, 0, 0)
+        
+        ### draw text
+        white_color = (0, 0, 0)
+        draw.text(postion_iteration, text, white_color, font2)
+        draw.text(position_psnr1, text_psnr1, color_psnr1, font)
+        draw.text(position_psnr2, text_psnr2, color_psnr2, font)
+
+        modified_img = np.array(pil_img)
+        frames.append(modified_img)
+
+    imageio.mimwrite(os.path.join(image_directory, output_file), frames, fps=1)
+
+if __name__ == '__main__':
+    d1 = "output/lego/hidden256_near2_far6/test/"
+    d2 = "output/lego/hashnerf_fuck_resolution_newnerf_accmap/test/"
+    output_file = "comparison_video.mp4"
+    image_directory = "./"
+
+    generate_comparision_video(d1, d2)

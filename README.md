@@ -49,6 +49,7 @@ NeRF---: Plus Version of NeRF--, optimize camera poses and NeRF in an end-to-end
     * **may be I have not decided a reasonable bound, so PSNR is relative lower than orginal paper(31.42) (near=2, far=6)**
  * June 8. 256 Samples. Using epoch 9. PSNR: 27.809. near = 2, far = 6 ![](readme_visuals/hidden256_near2_far6.gif)
     * **Fluctuation is very high, peak is close to 31, and some outliers are 21**
+ * June 10. Fix a fatal bug and now everything works great. No fluctuation anymore. ![](readme_visuals/cmp_video.gif)
 
 ### NOTES on vanilla NeRF
  * Paper description
