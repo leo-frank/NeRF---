@@ -26,18 +26,22 @@ assert mode in ['train', 'test']
 max_epoch = cfg.train.max_epoch if mode == 'train' else 1
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
 ### dataloading: ray_o, rays_d, near, far ###
 batch_size = cfg.train.batch_size if mode == 'train' else cfg.test.batch_size
 shuffle = cfg.train.shuffle  if mode == 'train' else cfg.test.shuffle
 chunk_size = cfg.train.chunk_size if mode == 'train' else cfg.test.chunk_size
 inference_train =  cfg.test.inference_train  if mode == 'test' else False
-train_dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode='train', inference_train=False) # TODO: clecan codes
-test_dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode='test', inference_train=inference_train)
-dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode=mode, inference_train=inference_train)
+
+if inference_train == True: # 1 situation: test mode but inference on train dataset
+    dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode='test', inference_train=True)
+else: # 2 situations: test mode and inference on test dataset / train mode
+    dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode=mode, inference_train=False)
+    if mode == 'train':
+        train_dataset = dataset
+    else:
+        train_dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode='train', inference_train=True)
 h, w = dataset.h, dataset.w
 dataloader = DataLoader(dataset, batch_size, shuffle)
-
 
 ### xyz embedding & direction embedding ###
 if cfg.model.type == 'vanilla':
@@ -66,11 +70,15 @@ elif cfg.model.type == 'hash':
 
 ### prepare output dir ###
 log_dir = './output/{}/{}/logs/'.format(cfg.data.scene, cfg.description)
-eval_dir = './output/{}/{}/test/'.format(cfg.data.scene, cfg.description) if not inference_train else './output/{}/{}/test_trained/'.format(cfg.data.scene, cfg.description)
+test_dir = './output/{}/{}/test/'.format(cfg.data.scene, cfg.description)
+test_trained_dir = './output/{}/{}/test_trained/'.format(cfg.data.scene, cfg.description)
 ckpt_dir = './output/{}/{}/ckpt/'.format(cfg.data.scene, cfg.description)
-os.makedirs(log_dir, exist_ok=True)
-os.makedirs(eval_dir, exist_ok=True)
-os.makedirs(ckpt_dir, exist_ok=True)
+train_inference_dir = './output/{}/{}/train_inference/'.format(cfg.data.scene, cfg.description)
+os.makedirs(log_dir, exist_ok=True)                 # tensorboard logging
+os.makedirs(test_dir, exist_ok=True)                # save when test on test image
+os.makedirs(test_trained_dir, exist_ok=True)        # save when test on trainning image
+os.makedirs(ckpt_dir, exist_ok=True)                # save ckpt directory
+os.makedirs(train_inference_dir, exist_ok=True)     # inference during training
 
 ### tensorboard ###
 writer = SummaryWriter(log_dir)
@@ -164,7 +172,9 @@ for epoch in range(max_epoch): # max_epoch is 1 for test
         
         rgb_prediction, rgbs = forward(batch, cfg)  # (B, H*W, 3)
         
+        
         if mode == 'train':
+            ############################### train mode ############################### 
             rgb_loss = loss_model(rgb_prediction, rgbs)
             psnr = compute_psnr(rgb_prediction, rgbs)
              
@@ -181,7 +191,8 @@ for epoch in range(max_epoch): # max_epoch is 1 for test
             writer.add_scalar('loss/rgb', rgb_loss.item(), global_step)
             writer.add_scalar('loss/psnr', psnr.item(), global_step)
            
-        else: # evaluation mode
+        else:
+            ############################### test mode ############################### 
             rgb_prediction = rgb_prediction.unbind(0)
             rgbs = rgbs.unbind(0)
             
@@ -189,59 +200,72 @@ for epoch in range(max_epoch): # max_epoch is 1 for test
                 img = img.view(h, w, 3) 
                 img_gt = img_gt.view(h, w, 3).to(device)
                 concatenated_image = torch.cat([img, img_gt], dim=1) # (h, 2w, 3)
-                save_image(concatenated_image.permute(2, 0, 1), "{}/{}_{}.png".format(eval_dir, it, i))
                 psnr = compute_psnr(img.unsqueeze(0), img_gt.unsqueeze(0))
                 all_psnr.append(psnr)
                 if inference_train == False:
+                    test_file_path = "{}/{}_{}.png".format(test_dir, it, i)
                     writer.add_scalar('inference/psnr', psnr.item(), it)
-                else:
+                else: # inference_train == True
+                    test_file_path = "{}/{}_{}.png".format(test_trained_dir, it, i)
                     writer.add_scalar('inference_train/psnr', psnr.item(), it)
+                save_image(concatenated_image.permute(2, 0, 1), test_file_path)
                 logger.info("saving {}_{}.png, psnr: {}".format(it, i, psnr))
             
         global_step += 1
-        progress_bar.update(1)
 
+        ############################### set progress bar ############################### 
+        progress_bar.update(1)
         if mode == 'train':
             progress_bar.set_postfix({'Epoch': epoch, 'Loss': rgb_loss.item(), 'PSNR': psnr.item()})
         else:
             progress_bar.set_postfix({'Epoch': epoch, 'PSNR': psnr.item()})
         
-        if global_step % 1000 == 0:
-            if cfg.model.type == 'hash':
-                checkpoint = {
-                    'nerf_model_state_dict': nerf_model.state_dict(),
-                    'embedder_xyz_model_state_dict': embedder_xyz_model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
+        ############################### Miscellaneous for train mode ############################### 
+        if mode == 'train':
+            
+            ### save model, optimizer ###
+            if global_step % 1000 == 0:
+                if cfg.model.type == 'hash':
+                    checkpoint = {
+                        'nerf_model_state_dict': nerf_model.state_dict(),
+                        'embedder_xyz_model_state_dict': embedder_xyz_model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                    }
+                else:
+                    checkpoint = {
+                        'nerf_model_state_dict': nerf_model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                    }
+                    
+                torch.save(checkpoint, '{}/model{}_{}.pth'.format(ckpt_dir, epoch, global_step)) 
+            
+            ### inference currrent training states on first test image ###
+            if global_step % 500 == 1:
+                x1, x2, x3 = test_dataset[0]['rays_o'].unsqueeze(0), test_dataset[0]['rays_d'].unsqueeze(0), test_dataset[0]['rgbs'].unsqueeze(0)
+                test_batch = {
+                    'rays_o': x1, # (B, 3)
+                    'rays_d': x2, # (B, 3)
+                    'rgbs': x3, # (B, 3)
                 }
-            else:
-                checkpoint = {
-                    'nerf_model_state_dict': nerf_model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                }
-                
-            torch.save(checkpoint, '{}/model{}_{}.pth'.format(ckpt_dir, epoch, global_step)) 
-        
-        if global_step % 500 == 1:
-            x1, x2, x3 = test_dataset[0]['rays_o'].unsqueeze(0), test_dataset[0]['rays_d'].unsqueeze(0), test_dataset[0]['rgbs'].unsqueeze(0)
-            test_batch = {
-                'rays_o': x1, # (B, 3)
-                'rays_d': x2, # (B, 3)
-                'rgbs': x3, # (B, 3)
-            }
-            rgb_prediction, rgbs = forward_with_no_gradients(test_batch, cfg)
-            for i, (img, img_gt) in enumerate(zip(rgb_prediction, rgbs)):
-                img = img.view(h, w, 3) 
-                img_gt = img_gt.view(h, w, 3).to(device)
-                concatenated_image = torch.cat([img, img_gt], dim=1) # (h, 2w, 3)    
-                save_image(concatenated_image.permute(2, 0, 1), "{}/test_{}_{}.png".format(eval_dir, global_step, i))  
-                psnr = compute_psnr(img.unsqueeze(0), img_gt.unsqueeze(0))
-                all_psnr.append(psnr)
-                logger.info("saving {}/test_{}_{}.png, psnr: {}".format(eval_dir, global_step, it, psnr))
-                writer.add_scalar('train_val/psnr', psnr.item(), global_step)  
-        
+                rgb_prediction, rgbs = forward_with_no_gradients(test_batch, cfg)
+                for i, (img, img_gt) in enumerate(zip(rgb_prediction, rgbs)):
+                    img = img.view(h, w, 3) 
+                    img_gt = img_gt.view(h, w, 3).to(device)
+                    concatenated_image = torch.cat([img, img_gt], dim=1) # (h, 2w, 3)
+                    file_path = "{}/{}_{}.png".format(train_inference_dir, global_step, i)
+                    save_image(concatenated_image.permute(2, 0, 1), file_path)  
+                    psnr = compute_psnr(img.unsqueeze(0), img_gt.unsqueeze(0))
+                    all_psnr.append(psnr)
+                    logger.info("saving {}, psnr: {}".format(file_path, psnr))
+                    writer.add_scalar('train_val/psnr', psnr.item(), global_step)
+    
+    
+    ############################### End of per epoch ############################### 
     if mode == 'train':
         pass
     else: # evaluation mode
-        logger.title("average psnr: {}".format(torch.tensor(all_psnr).mean().item()))
-        generate_video_from_images(eval_dir)
+        avg_psnr = torch.tensor(all_psnr).mean().item()
+        writer.add_scalar('inference/avg_psnr', avg_psnr, it)
+        logger.title("average psnr: {}".format(avg_psnr))
+        generate_video_from_images(test_dir)
         

@@ -1,6 +1,6 @@
 _parent_: config/base.yaml
 
-mode:  train                                     # train/test
+mode:  test                                     # train/test
 
 data:
     base_dir: ./nerf_synthetic
@@ -12,7 +12,7 @@ model:
 
 test:
     inference_train: False
-    ckpt: output/lego/hashnerf_fuck_resolution_newnerf/ckpt/model2_13000.pth
+    ckpt: output/lego/hashnerf_fuck_resolution_newnerf_accmap/ckpt/model7_44000.pth
 
 description: hashnerf_fuck_resolution_newnerf_accmap
 

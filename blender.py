@@ -17,7 +17,7 @@ class BlenderDataSet(Dataset):
         logger.title("Loading dataset from {}, mode: {}".format(self.root_dir, self.mode))
         self.images = []
         self.poses = []
-        if inference_train == True:
+        if inference_train == True: # read train json file but convert it to input as test mode
             mode = 'train'
             logger.info("inference train images")
         self.read_transforms_json(os.path.join(self.root_dir, 'transforms_{}.json'.format(mode)))
