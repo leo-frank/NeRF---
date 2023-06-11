@@ -31,15 +31,10 @@ batch_size = cfg.train.batch_size if mode == 'train' else cfg.test.batch_size
 shuffle = cfg.train.shuffle  if mode == 'train' else cfg.test.shuffle
 chunk_size = cfg.train.chunk_size if mode == 'train' else cfg.test.chunk_size
 inference_train =  cfg.test.inference_train  if mode == 'test' else False
-
-if inference_train == True: # 1 situation: test mode but inference on train dataset
-    dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode='test', inference_train=True)
-else: # 2 situations: test mode and inference on test dataset / train mode
-    dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode=mode, inference_train=False)
-    if mode == 'train':
-        train_dataset = dataset
-    else:
-        train_dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode='train', inference_train=True)
+assert not (mode == 'train' and inference_train == True)
+train_dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode='train', inference_train=True)
+test_dataset = BlenderDataSet(cfg.data.base_dir, cfg.data.scene, mode='test', inference_train=inference_train)
+dataset = train_dataset if mode == 'train' else test_dataset
 h, w = dataset.h, dataset.w
 dataloader = DataLoader(dataset, batch_size, shuffle)
 
