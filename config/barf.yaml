@@ -1,0 +1,30 @@
+model:
+    Embedding:
+        barf:
+            start_epoch: 400                # what does such epoch represents here?
+            end_epoch: 800
+    VanillaNeRF:
+        hidden_size: 128
+        sigma_activation: softplus
+
+data:
+    resize: [400, 400]
+
+N_samples: 128
+
+seed: 0
+
+train:
+    batch_size: 1024
+    chunk_size: 1024
+    max_epoch: 2000
+
+optimzier:
+    nerf:
+        initial: 5e-4
+        end: 1e-4
+    pose:
+        initial: 1e-3
+        end: 1e-5
+
+    

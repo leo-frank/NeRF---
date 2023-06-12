@@ -19,7 +19,7 @@ lr:
 train:
     max_epoch: 30
     batch_size: 10240     # let batch_size equal to chunk_size
-    chunk_size: 10240     # 10240 is the best supported size for single A100 GPU
+    chunk_size: 10240     # 10240 is the best supported size for single A100 GPU, which almost certainly fill all 40 GB of memory
     shuffle: True  
 
 test:
